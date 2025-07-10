@@ -8,7 +8,20 @@ $(document).ready(function() {
     let score = 0;
     let questionAmount = 10; // Default, will be updated from input
 
+    // Timer variables
+    let timerInterval = null;
+    let totalQuizTime = 0; // in seconds
+    let timeRemaining = 0; // in seconds
+
     const API_URL = "https://opentdb.com/";
+
+    // Timer Constants
+    const BASE_SECONDS_PER_QUESTION = 20; // Average time for a medium question
+    const DIFFICULTY_MULTIPLIERS = {
+        easy: 0.75,  // Easy questions get less time
+        medium: 1.0,
+        hard: 1.5    // Hard questions get more time
+    };
 
     // --- DOM Elements ---
     const $settingsSection = $("#settings-section");
@@ -34,6 +47,83 @@ $(document).ready(function() {
     const $incorrectAnswersSpan = $("#incorrect-answers");
     const $finalScoreSpan = $("#final-score");
     const $errorMessageQuiz = $("#error-message-quiz");
+    const $timeRemainingDisplay = $("#time-remaining");
+
+
+    // --- Timer Functions ---
+    function calculateTotalTime() {
+        totalQuizTime = 0;
+        if (questions.length === 0) return 0;
+
+        questions.forEach(question => {
+            const difficulty = question.difficulty.toLowerCase();
+            const multiplier = DIFFICULTY_MULTIPLIERS[difficulty] || 1.0;
+            totalQuizTime += BASE_SECONDS_PER_QUESTION * multiplier;
+        });
+        totalQuizTime = Math.round(totalQuizTime);
+        return totalQuizTime;
+    }
+
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+
+    function updateTimerDisplay() {
+        $timeRemainingDisplay.text(`Time: ${formatTime(timeRemaining)}`);
+    }
+
+    function startTimer() {
+        if (timerInterval) clearInterval(timerInterval); // Clear existing timer
+
+        timeRemaining = totalQuizTime;
+        updateTimerDisplay();
+
+        // Announce total time for screen readers
+        const minutes = Math.floor(totalQuizTime / 60);
+        const seconds = totalQuizTime % 60;
+        let announcement = `Timer started. `;
+        if (totalQuizTime > 0) {
+            announcement += `You have `;
+            if (minutes > 0) {
+                announcement += `${minutes} minute${minutes > 1 ? 's' : ''}`;
+                if (seconds > 0) announcement += ` and `;
+            }
+            if (seconds > 0) {
+                announcement += `${seconds} second${seconds > 1 ? 's' : ''}`;
+            }
+            announcement += `.`;
+        } else {
+            announcement += `No time allocated.`; // Should ideally not happen if there are questions
+        }
+        $("#sr-announcer").text(announcement);
+        // Clear after a short delay so it doesn't re-announce if something else triggers a change on it,
+        // though with aria-atomic="true", it should read the whole new content.
+        setTimeout(() => { $("#sr-announcer").text(""); }, 1500); // Increased delay slightly
+
+        timerInterval = setInterval(function() {
+            timeRemaining--;
+            updateTimerDisplay();
+            if (timeRemaining <= 0) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                console.log("Time's up!");
+                // This feedback will be announced by the feedback container's aria-live="polite"
+                $feedbackContainer.text("Time's up! Moving to results.").addClass('text-red-600 font-semibold');
+                // Disable answer buttons if any are active
+                $answersContainer.find('button').prop('disabled', true).addClass('opacity-75 cursor-not-allowed');
+                $nextQuestionBtn.addClass('hidden'); // Hide next button if visible
+                setTimeout(showResults, 1500); // Give a moment for user to see "Time's up"
+            }
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        console.log("Timer stopped.");
+    }
 
 
     // --- Initialization ---
@@ -297,6 +387,7 @@ $(document).ready(function() {
     }
 
     function showResults() {
+        stopTimer(); // Stop timer as quiz is ending
         $quizSection.addClass('hidden');
         $correctAnswersSpan.text(score);
         $incorrectAnswersSpan.text(questions.length - score);
@@ -330,6 +421,8 @@ $(document).ready(function() {
         if (success && questions.length > 0) {
             currentQuestionIndex = 0;
             score = 0;
+            calculateTotalTime(); // Calculate time based on fetched questions
+            startTimer();         // Start the countdown
             displayQuestion();
             showSection($quizSection);
         } else {
@@ -378,6 +471,8 @@ $(document).ready(function() {
         if (success && questions.length > 0) {
             currentQuestionIndex = 0;
             score = 0;
+            calculateTotalTime(); // Calculate time for the new set of questions
+            startTimer();         // Start the timer
             displayQuestion();
             showSection($quizSection);
         } else {
@@ -402,11 +497,18 @@ $(document).ready(function() {
         questions = [];
         currentQuestionIndex = 0;
         score = 0;
+        stopTimer(); // Stop any active timer
+        totalQuizTime = 0;
+        timeRemaining = 0;
+        updateTimerDisplay(); // Reset display to --:-- or initial state
+        $timeRemainingDisplay.text('Time: --:--');
+
+
         // sessionToken = null; // Or reset it via API if needed
         $questionText.html("Question will appear here...");
         $answersContainer.empty();
         $feedbackContainer.empty().removeClass('text-green-600 text-red-600');
-        $progressBar.css('width', '0%');
+        $progressBar.css('width', '0%').attr('aria-valuenow', '0'); // Reset progress bar ARIA
         $nextQuestionBtn.addClass('hidden');
         $errorMessageQuiz.text('').addClass('hidden');
     }
