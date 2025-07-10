@@ -1,5 +1,32 @@
 // Quiz Application Logic using jQuery
 
+// --- Cookie Helper Functions ---
+function setCookie(name, value, days) {
+    let expires = "";
+    if (days) {
+        const date = new Date();
+        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "")  + expires + "; path=/; SameSite=Lax";
+}
+
+function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for(let i = 0; i < ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+}
+
+function deleteCookie(name) {
+    document.cookie = name +'=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax;';
+}
+
+
 $(document).ready(function() {
     // Global state variables
     let sessionToken = null;
@@ -48,6 +75,30 @@ $(document).ready(function() {
     const $finalScoreSpan = $("#final-score");
     const $errorMessageQuiz = $("#error-message-quiz");
     const $timeRemainingDisplay = $("#time-remaining");
+
+    // Auth DOM Elements
+    const $authSection = $("#auth-section");
+    const $registrationFormContainer = $("#registration-form-container");
+    const $loginFormContainer = $("#login-form-container");
+    const $registrationForm = $("#registration-form");
+    const $loginForm = $("#login-form");
+    const $regUsernameInput = $("#reg-username");
+    const $regPasswordInput = $("#reg-password");
+    const $loginUsernameInput = $("#login-username");
+    const $loginPasswordInput = $("#login-password");
+    const $regFeedback = $("#reg-feedback");
+    const $loginFeedback = $("#login-feedback");
+    const $showLoginLink = $("#show-login-link");
+    const $showRegisterLink = $("#show-register-link");
+    const $userInfoContainer = $("#user-info-container");
+    const $userDisplay = $("#user-display");
+    const $logoutBtn = $("#logout-btn");
+    const $quizMainContainer = $("#quiz-main-container");
+
+
+    // --- User Auth Constants ---
+    const MOCK_USER_DB_KEY = 'quizUserDB'; // localStorage key
+    const SESSION_COOKIE_NAME = 'loggedInQuizUser';
 
 
     // --- Timer Functions ---
@@ -129,11 +180,18 @@ $(document).ready(function() {
     // --- Initialization ---
     function init() {
         console.log("Quiz App Initialized");
-        populateCategories();
-        requestSessionToken();
-        // We can request a token initially, or wait until "Start Quiz" is clicked.
-        // For now, let's get it on load to simplify the start quiz logic slightly.
-        // If it expires or becomes invalid, we'll handle it then.
+        // Check for logged-in user on page load
+        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
+        if (loggedInUser) {
+            console.log("User", loggedInUser, "is logged in from cookie.");
+            updateUIAfterLogin(loggedInUser); // This will show quiz, hide auth, populate categories, get token
+        } else {
+            console.log("No user logged in. Showing auth forms.");
+            updateUIAfterLogout(); // This will show auth forms, hide quiz
+            // No need to populate categories or get OpenTDB token if not logged in
+        }
+        // Note: populateCategories() and requestSessionToken() are now called conditionally
+        // within updateUIAfterLogin() or not at all in updateUIAfterLogout() for the initial state.
     }
 
     // --- API Communication ---
@@ -515,4 +573,145 @@ $(document).ready(function() {
 
     // Call init function when DOM is ready
     init();
+
+    // --- Auth UI Togglers ---
+    $showLoginLink.on('click', function(e) {
+        e.preventDefault();
+        $registrationFormContainer.addClass('hidden');
+        $loginFormContainer.removeClass('hidden');
+        $regFeedback.text('').removeClass('text-red-500 text-green-500');
+        $loginFeedback.text('').removeClass('text-red-500');
+        $loginUsernameInput.focus(); // Focus on username field of login form
+    });
+
+    $showRegisterLink.on('click', function(e) {
+        e.preventDefault();
+        $loginFormContainer.addClass('hidden');
+        $registrationFormContainer.removeClass('hidden');
+        $loginFeedback.text('').removeClass('text-red-500');
+        $regFeedback.text('').removeClass('text-red-500 text-green-500');
+        $regUsernameInput.focus(); // Focus on username field of registration form
+    });
+
+    // --- Registration Logic ---
+    $registrationForm.on('submit', function(e) {
+        e.preventDefault();
+        const username = $regUsernameInput.val().trim();
+        const password = $regPasswordInput.val(); // For this demo, not hashing. Real app MUST hash.
+
+        if (!username || !password) {
+            $regFeedback.text('Username and password are required.').removeClass('text-green-500').addClass('text-red-500');
+            return;
+        }
+        // Basic password length check (example)
+        if (password.length < 6) {
+            $regFeedback.text('Password must be at least 6 characters long.').removeClass('text-green-500').addClass('text-red-500');
+            return;
+        }
+
+
+        let users = JSON.parse(localStorage.getItem(MOCK_USER_DB_KEY)) || {};
+
+        if (users[username]) {
+            $regFeedback.text('Username already exists. Please choose another.').removeClass('text-green-500').addClass('text-red-500');
+        } else {
+            // Simulate storing the user. In a real app, password would be securely hashed.
+            users[username] = { password: password }; // Storing plain password for demo purposes ONLY.
+            localStorage.setItem(MOCK_USER_DB_KEY, JSON.stringify(users));
+
+            $regFeedback.text('Registration successful! Please login.').removeClass('text-red-500').addClass('text-green-500');
+            $regUsernameInput.val(''); // Clear registration form
+            $regPasswordInput.val('');
+
+            // Automatically switch to login form
+            setTimeout(() => {
+                $showLoginLink.trigger('click'); // Simulate click to switch forms
+                $loginUsernameInput.val(username); // Pre-fill username in login form
+                $loginPasswordInput.focus();
+                $regFeedback.text(''); // Clear registration success message after switch
+            }, 1500); // Delay to allow user to read success message
+        }
+    });
+
+    // --- Login Logic ---
+    $loginForm.on('submit', function(e) {
+        e.preventDefault();
+        const username = $loginUsernameInput.val().trim();
+        const password = $loginPasswordInput.val();
+
+        if (!username || !password) {
+            $loginFeedback.text('Username and password are required.').addClass('text-red-500');
+            return;
+        }
+
+        let users = JSON.parse(localStorage.getItem(MOCK_USER_DB_KEY)) || {};
+        const user = users[username];
+
+        if (user && user.password === password) { // In a real app, compare hashed passwords securely
+            setCookie(SESSION_COOKIE_NAME, username, 1); // Set session cookie for 1 day
+
+            $loginFeedback.text('Login successful!').removeClass('text-red-500').addClass('text-green-500');
+            $loginUsernameInput.val('');
+            $loginPasswordInput.val('');
+
+            updateUIAfterLogin(username);
+
+            // Optionally clear success message after a delay
+            setTimeout(() => { $loginFeedback.text(''); }, 1500);
+
+        } else {
+            $loginFeedback.text('Invalid username or password.').removeClass('text-green-500').addClass('text-red-500');
+        }
+    });
+
+    function updateUIAfterLogin(username) {
+        $authSection.addClass('hidden'); // Hide login/reg section
+        $quizMainContainer.removeClass('hidden'); // Show main quiz content
+        $settingsSection.removeClass('hidden'); // Ensure settings are visible if previously hidden by quiz flow
+        $quizSection.addClass('hidden'); // Keep quiz gameplay hidden until started
+        $resultsSection.addClass('hidden'); // Keep results hidden
+
+        $userDisplay.text(`Logged in as: ${username}`);
+        $userInfoContainer.removeClass('hidden'); // Show user info (name + logout button)
+
+        // Reset any previous quiz state when logging in, ready for a fresh start
+        resetQuizState();
+        // Populate categories and get a session token for the OpenTDB API as user is now logged in
+        populateCategories();
+        requestSessionToken();
+        // Focus on a relevant element after login, e.g., the start quiz button
+        $startQuizBtn.focus();
+    }
+
+    // --- Logout Logic ---
+    $logoutBtn.on('click', function() {
+        deleteCookie(SESSION_COOKIE_NAME);
+        updateUIAfterLogout();
+    });
+
+    function updateUIAfterLogout() {
+        $quizMainContainer.addClass('hidden'); // Hide main quiz content
+        $authSection.removeClass('hidden');     // Show login/reg section
+
+        // Default to showing login form after logout
+        $registrationFormContainer.addClass('hidden');
+        $loginFormContainer.removeClass('hidden');
+        $loginFeedback.text('').removeClass('text-red-500 text-green-500'); // Clear any old messages
+        $regFeedback.text('').removeClass('text-red-500 text-green-500');
+
+
+        $userInfoContainer.addClass('hidden'); // Hide user info (name + logout button)
+        $userDisplay.text('');
+
+        // Clear quiz specific data and OpenTDB session token
+        resetQuizState();
+        sessionToken = null; // Explicitly clear the OpenTDB session token
+        // Clear category dropdown to be repopulated if user logs in again or on page refresh
+        $categorySelect.empty().append('<option value="">Any Category</option>');
+        // No need to call populateCategories() or requestSessionToken() here, as user is logged out.
+
+        // Focus on the login username field
+        $loginUsernameInput.focus();
+    }
+
 });
