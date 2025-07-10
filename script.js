@@ -95,6 +95,17 @@ $(document).ready(function() {
     const $logoutBtn = $("#logout-btn");
     const $quizMainContainer = $("#quiz-main-container");
 
+    // Report Section DOM Elements
+    const $reportSection = $("#report-section");
+    const $viewHistoryBtn = $("#view-history-btn");
+    const $backToSettingsBtn = $("#back-to-settings-btn");
+    const $quizHistoryTableContainer = $("#quiz-history-table-container"); // Actually the div containing the placeholder
+    const $historyTablePlaceholder = $("#history-table-placeholder");
+    const $noHistoryMessage = $("#no-history-message");
+    const $scoreOverTimeChartEl = $("#score-over-time-chart");
+    const $categoryPerformanceChartEl = $("#category-performance-chart");
+    const $difficultyDistributionChartEl = $("#difficulty-distribution-chart");
+
 
     // --- User Auth Constants ---
     const MOCK_USER_DB_KEY = 'quizUserDB'; // localStorage key
@@ -447,14 +458,44 @@ $(document).ready(function() {
     function showResults() {
         stopTimer(); // Stop timer as quiz is ending
         $quizSection.addClass('hidden');
-        $correctAnswersSpan.text(score);
-        $incorrectAnswersSpan.text(questions.length - score);
-        const percentage = questions.length > 0 ? (score / questions.length) * 100 : 0;
+
+        const numQuestions = questions.length;
+        const correctCount = score;
+        const incorrectCount = numQuestions - correctCount;
+        const percentage = numQuestions > 0 ? (correctCount / numQuestions) * 100 : 0;
+
+        $correctAnswersSpan.text(correctCount);
+        $incorrectAnswersSpan.text(incorrectCount);
         $finalScoreSpan.text(percentage.toFixed(1) + '%');
 
         // Update progress bar to 100% and set ARIA attributes for completion
-        currentQuestionIndex = questions.length; // Ensure progress bar calculation is for completion
+        currentQuestionIndex = numQuestions; // Ensure progress bar calculation is for completion
         updateProgressBar(); // This will now set it to 100% and update ARIA
+
+        // Store detailed quiz results for history
+        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
+        if (loggedInUser && numQuestions > 0) { // Only store if logged in and quiz had questions
+            const categoryName = $categorySelect.find('option:selected').text();
+            const difficultyName = $difficultySelect.find('option:selected').text();
+
+            const quizResult = {
+                timestamp: new Date().toISOString(),
+                category: $categorySelect.val() ? { id: $categorySelect.val(), name: categoryName } : { id: '', name: 'Any Category'},
+                difficulty: $difficultySelect.val() ? {value: $difficultySelect.val(), name: difficultyName } : { value: '', name: 'Any Difficulty'},
+                questionType: $typeSelect.val() ? $typeSelect.find('option:selected').text() : 'Any Type',
+                numQuestions: numQuestions,
+                correct: correctCount,
+                incorrect: incorrectCount,
+                percentage: parseFloat(percentage.toFixed(1)),
+                timeTaken: totalQuizTime > 0 ? totalQuizTime - Math.max(0, timeRemaining) : null // Time spent in seconds
+            };
+
+            const historyKey = `quizHistory_${loggedInUser}`;
+            let userHistory = JSON.parse(localStorage.getItem(historyKey)) || [];
+            userHistory.push(quizResult);
+            localStorage.setItem(historyKey, JSON.stringify(userHistory));
+            console.log("Quiz result stored for user:", loggedInUser, quizResult);
+        }
 
         showSection($resultsSection);
         $("#results-heading").focus(); // Focus on the results heading
@@ -712,6 +753,242 @@ $(document).ready(function() {
 
         // Focus on the login username field
         $loginUsernameInput.focus();
+    }
+
+
+    // --- Report/History Logic ---
+    $viewHistoryBtn.on('click', function() {
+        showReportSection();
+    });
+
+    $backToSettingsBtn.on('click', function() {
+        $reportSection.addClass('hidden');
+        $quizMainContainer.removeClass('hidden'); // Show quiz settings area
+        $settingsSection.removeClass('hidden');
+        $quizSection.addClass('hidden');
+        $resultsSection.addClass('hidden');
+        // Potentially focus on a settings element, e.g., the first one or a heading
+        $("#settings-section h2").first().focus();
+    });
+
+    function showReportSection() {
+        $quizMainContainer.addClass('hidden');
+        $authSection.addClass('hidden'); // Should already be hidden if user is logged in
+        $reportSection.removeClass('hidden');
+        $("#report-section h1").first().focus(); // Focus on report heading
+
+        loadAndDisplayQuizHistory();
+        // TODO: Call functions to render charts
+    }
+
+    function loadAndDisplayQuizHistory() {
+        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
+        if (!loggedInUser) {
+            $noHistoryMessage.text("Please log in to view history.").removeClass('hidden');
+            $historyTablePlaceholder.empty(); // Clear any old table
+            return;
+        }
+
+        const historyKey = `quizHistory_${loggedInUser}`;
+        const userHistory = JSON.parse(localStorage.getItem(historyKey)) || [];
+
+        $historyTablePlaceholder.empty(); // Clear previous table/message
+
+        if (userHistory.length === 0) {
+            $noHistoryMessage.text("No quiz history found.").removeClass('hidden');
+        } else {
+            $noHistoryMessage.addClass('hidden');
+            const $table = $('<table class="min-w-full divide-y divide-gray-200 border border-gray-300"></table>');
+
+            // Add a caption for accessibility
+            const $caption = $('<caption>A summary of your past quiz attempts, showing details including date, category, difficulty, and score.</caption>');
+            $caption.addClass('sr-only'); // Visually hide, but available to screen readers
+            $table.append($caption);
+
+            const $thead = $('<thead class="bg-gray-50"><tr></tr></thead>');
+            const headers = ["Date", "Category", "Difficulty", "Type", "Questions", "Correct", "Score %", "Time Taken"];
+            headers.forEach(header => {
+                $thead.find('tr').append(`<th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${header}</th>`);
+            });
+            $table.append($thead);
+
+            const $tbody = $('<tbody class="bg-white divide-y divide-gray-200"></tbody>');
+            // Display latest quizzes first
+            userHistory.slice().reverse().forEach(quiz => {
+                const $row = $('<tr></tr>');
+                const quizDate = new Date(quiz.timestamp).toLocaleString();
+                const timeTakenStr = quiz.timeTaken !== null ? formatTime(quiz.timeTaken) : 'N/A';
+
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${quizDate}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${quiz.category.name}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${quiz.difficulty.name}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${quiz.questionType}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-center">${quiz.numQuestions}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-center">${quiz.correct}</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-center font-semibold">${quiz.percentage}%</td>`);
+                $row.append(`<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 text-center">${timeTakenStr}</td>`);
+                $tbody.append($row);
+            });
+            $table.append($tbody);
+            $historyTablePlaceholder.append($table);
+        }
+    }
+
+    function destroyChartIfExists(chartContainerElement) {
+        // ApexCharts adds a data attribute 'apexcharts-id' to the container.
+        // We can check for this or simply try to get the chart instance by its common ID pattern.
+        // However, a simpler way for this context is to empty the container before rendering.
+        // This might not destroy the ApexCharts instance itself if not managed by an instance variable,
+        // but it prevents duplicate charts. For more robust dynamic updates, managing chart instances is better.
+        if (chartContainerElement && chartContainerElement.length > 0) {
+            chartContainerElement.empty(); // Clear previous chart
+        }
+    }
+
+
+    function renderScoreOverTimeChart(userHistory) {
+        destroyChartIfExists($scoreOverTimeChartEl);
+        if (userHistory.length === 0) return;
+
+        const options = {
+            series: [{
+                name: 'Score %',
+                data: userHistory.map(quiz => quiz.percentage)
+            }],
+            chart: {
+                type: 'line',
+                height: 350,
+                toolbar: { show: true }
+            },
+            xaxis: {
+                type: 'datetime',
+                categories: userHistory.map(quiz => quiz.timestamp),
+                title: { text: 'Date of Quiz' }
+            },
+            yaxis: {
+                title: { text: 'Score Percentage' },
+                min: 0,
+                max: 100
+            },
+            tooltip: {
+                x: { format: 'dd MMM yyyy HH:mm' }
+            },
+            stroke: { curve: 'smooth' },
+            title: { text: 'Quiz Score Trend', align: 'left' }
+        };
+        const chart = new ApexCharts($scoreOverTimeChartEl[0], options);
+        chart.render();
+    }
+
+    function renderCategoryPerformanceChart(userHistory) {
+        destroyChartIfExists($categoryPerformanceChartEl);
+        if (userHistory.length === 0) return;
+
+        const categoryData = {}; // { 'Category Name': { totalScore: 0, count: 0 } }
+        userHistory.forEach(quiz => {
+            const catName = quiz.category.name || 'Unknown';
+            if (!categoryData[catName]) {
+                categoryData[catName] = { totalScore: 0, count: 0 };
+            }
+            categoryData[catName].totalScore += quiz.percentage;
+            categoryData[catName].count++;
+        });
+
+        const categories = Object.keys(categoryData);
+        const averageScores = categories.map(cat =>
+            parseFloat((categoryData[cat].totalScore / categoryData[cat].count).toFixed(1))
+        );
+
+        const options = {
+            series: [{
+                name: 'Average Score %',
+                data: averageScores
+            }],
+            chart: {
+                type: 'bar',
+                height: 350,
+                toolbar: { show: true }
+            },
+            xaxis: {
+                categories: categories,
+                title: { text: 'Category' }
+            },
+            yaxis: {
+                title: { text: 'Average Score %' },
+                min: 0,
+                max: 100
+            },
+            plotOptions: { bar: { horizontal: false, columnWidth: '55%', endingShape: 'rounded' } },
+            title: { text: 'Average Score by Category', align: 'left' }
+        };
+        const chart = new ApexCharts($categoryPerformanceChartEl[0], options);
+        chart.render();
+    }
+
+    function renderDifficultyDistributionChart(userHistory) {
+        destroyChartIfExists($difficultyDistributionChartEl);
+        if (userHistory.length === 0) return;
+
+        const difficultyCounts = { 'Any Difficulty': 0, 'Easy': 0, 'Medium': 0, 'Hard': 0 };
+        userHistory.forEach(quiz => {
+            const diffName = quiz.difficulty.name || 'Any Difficulty';
+             if (difficultyCounts[diffName] !== undefined) {
+                difficultyCounts[diffName]++;
+            } else {
+                // If a new/unexpected difficulty name appears, group it under 'Other' or handle as needed
+                difficultyCounts['Other'] = (difficultyCounts['Other'] || 0) + 1;
+            }
+        });
+
+        // Filter out difficulties with zero quizzes taken for a cleaner pie chart
+        const labels = Object.keys(difficultyCounts).filter(key => difficultyCounts[key] > 0);
+        const series = labels.map(label => difficultyCounts[label]);
+
+        if (series.length === 0) return; // Nothing to show
+
+        const options = {
+            series: series,
+            labels: labels,
+            chart: {
+                type: 'donut', // or 'pie'
+                height: 380
+            },
+            title: { text: 'Quiz Distribution by Difficulty', align: 'left' },
+            responsive: [{
+                breakpoint: 480,
+                options: {
+                    chart: { width: 200 },
+                    legend: { position: 'bottom' }
+                }
+            }]
+        };
+        const chart = new ApexCharts($difficultyDistributionChartEl[0], options);
+        chart.render();
+    }
+
+    // Modify showReportSection to call chart rendering functions
+    function showReportSection() {
+        $quizMainContainer.addClass('hidden');
+        $authSection.addClass('hidden'); // Should already be hidden if user is logged in
+        $reportSection.removeClass('hidden');
+        $("#report-section h1").first().focus(); // Focus on report heading
+
+        loadAndDisplayQuizHistory(); // This function now exists
+
+        // Fetch history again or pass it from loadAndDisplayQuizHistory
+        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
+        if (loggedInUser) {
+            const historyKey = `quizHistory_${loggedInUser}`;
+            const userHistory = JSON.parse(localStorage.getItem(historyKey)) || [];
+            renderScoreOverTimeChart(userHistory);
+            renderCategoryPerformanceChart(userHistory);
+            renderDifficultyDistributionChart(userHistory);
+        } else {
+            // Clear charts if no user (or handle in render functions)
+            destroyChartIfExists($scoreOverTimeChartEl);
+            destroyChartIfExists($categoryPerformanceChartEl);
+            destroyChartIfExists($difficultyDistributionChartEl);
+        }
     }
 
 });

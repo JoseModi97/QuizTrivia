@@ -20,8 +20,11 @@
         <header class="text-center py-8 relative">
             <h1 class="text-4xl font-bold text-blue-600">Trivia Quiz</h1>
             <div id="user-info-container" class="absolute top-0 right-0 mt-4 mr-4 text-sm hidden">
-                <span id="user-display" class="text-gray-700"></span>
-                <button id="logout-btn" class="ml-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-xs">
+                <span id="user-display" class="text-gray-700 mr-3"></span>
+                <button id="view-history-btn" class="bg-purple-500 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded text-xs mr-2">
+                    View History
+                </button>
+                <button id="logout-btn" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-xs">
                     Logout
                 </button>
             </div>
@@ -169,7 +172,45 @@
         </footer>
     </div>
 
+    <!-- Report/History Section -->
+    <section id="report-section" class="hidden container mx-auto p-4">
+        <header class="text-center py-8">
+            <h1 class="text-3xl font-bold text-gray-700">Quiz History & Reports</h1>
+        </header>
+
+        <div class="mb-6 text-center">
+            <button id="back-to-settings-btn" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded">
+                &larr; Back to Quiz Settings
+            </button>
+        </div>
+
+        <div id="quiz-history-table-container" class="mb-12 bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Past Quizzes</h2>
+            <div id="history-table-placeholder" class="overflow-x-auto">
+                <!-- Table will be dynamically inserted here by script.js -->
+                <p id="no-history-message" class="hidden text-gray-500">No quiz history found.</p>
+            </div>
+        </div>
+
+        <div id="charts-container" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Score Percentage Over Time</h3>
+                <div id="score-over-time-chart"></div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Performance by Category</h3>
+                <div id="category-performance-chart"></div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Quizzes by Difficulty</h3>
+                <div id="difficulty-distribution-chart"></div>
+            </div>
+             <!-- Add more chart containers as needed -->
+        </div>
+    </section>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="script.js"></script>
 </body>
 </html>
