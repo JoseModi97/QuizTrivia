@@ -771,14 +771,29 @@ $(document).ready(function() {
         $("#settings-section h2").first().focus();
     });
 
+    // This is the consolidated showReportSection function
     function showReportSection() {
         $quizMainContainer.addClass('hidden');
         $authSection.addClass('hidden'); // Should already be hidden if user is logged in
         $reportSection.removeClass('hidden');
         $("#report-section h1").first().focus(); // Focus on report heading
 
-        loadAndDisplayQuizHistory();
-        // TODO: Call functions to render charts
+        loadAndDisplayQuizHistory(); // This function now exists
+
+        // Fetch history again or pass it from loadAndDisplayQuizHistory
+        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
+        if (loggedInUser) {
+            const historyKey = `quizHistory_${loggedInUser}`;
+            const userHistory = JSON.parse(localStorage.getItem(historyKey)) || [];
+            renderScoreOverTimeChart(userHistory);
+            renderCategoryPerformanceChart(userHistory);
+            renderDifficultyDistributionChart(userHistory);
+        } else {
+            // Clear charts if no user (or handle in render functions)
+            destroyChartIfExists($scoreOverTimeChartEl);
+            destroyChartIfExists($categoryPerformanceChartEl);
+            destroyChartIfExists($difficultyDistributionChartEl);
+        }
     }
 
     function loadAndDisplayQuizHistory() {
@@ -966,29 +981,7 @@ $(document).ready(function() {
         chart.render();
     }
 
-    // Modify showReportSection to call chart rendering functions
-    function showReportSection() {
-        $quizMainContainer.addClass('hidden');
-        $authSection.addClass('hidden'); // Should already be hidden if user is logged in
-        $reportSection.removeClass('hidden');
-        $("#report-section h1").first().focus(); // Focus on report heading
-
-        loadAndDisplayQuizHistory(); // This function now exists
-
-        // Fetch history again or pass it from loadAndDisplayQuizHistory
-        const loggedInUser = getCookie(SESSION_COOKIE_NAME);
-        if (loggedInUser) {
-            const historyKey = `quizHistory_${loggedInUser}`;
-            const userHistory = JSON.parse(localStorage.getItem(historyKey)) || [];
-            renderScoreOverTimeChart(userHistory);
-            renderCategoryPerformanceChart(userHistory);
-            renderDifficultyDistributionChart(userHistory);
-        } else {
-            // Clear charts if no user (or handle in render functions)
-            destroyChartIfExists($scoreOverTimeChartEl);
-            destroyChartIfExists($categoryPerformanceChartEl);
-            destroyChartIfExists($difficultyDistributionChartEl);
-        }
-    }
+    // The duplicate showReportSection function that was here has been removed.
+    // The consolidated version is now located above loadAndDisplayQuizHistory.
 
 });
